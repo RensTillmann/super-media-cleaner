@@ -1,128 +1,47 @@
 <?php
 /**
- * Super - Media Cleaner 23
+ * Super - Media Cleaner
  *
  * @package   Super - Media Cleaner
- * @author    feeling4design
- * @link      http://codecanyon.net/user/feeling4design
- * @copyright 2018 by feeling4design
+ * @author    WebRehab
+ * @link      https://f4d.nl/super-media-cleaner
+ * 
+ * @copyright 2022 by WebRehab
  *
  * @wordpress-plugin
  * Plugin Name: Super - Media Cleaner
- * Plugin URI:  http://codecanyon.net/user/feeling4design
- * Description: Clean unused media files and save up space on your server and in your database
+ * Plugin URI:  https://f4d.nl/super-media-cleaner
+ * Description: Delete files from your upload directory/media library that are not currently being used by your site, and save up disk space
  * Version:     1.0.0
- * Author:      feeling4design
- * Author URI:  http://codecanyon.net/user/feeling4design
+ * Author:      WebRehab
+ * Author URI:  https://f4d.nl/super-media-cleaner
 */
 
-if ( ! defined( 'ABSPATH' ) ) {
+if ( ! defined( 'ABSPATH' ) )
 	exit; // Exit if accessed directly
-}
 
 if(!class_exists('SUPER_Media_Cleaner')) :
-
-
-    /**
-     * Main SUPER_Media_Cleaner Class
-     *
-     * @class SUPER_Media_Cleaner
-     * @version	1.0.0
-     */
     final class SUPER_Media_Cleaner {
-    
-        
-        /**
-         * @var string
-         *
-         *	@since		1.0.0
-        */
         public static $version = '1.0.0';
-        
-
-        /**
-         * @var SUPER_Media_Cleaner The single instance of the class
-         *
-         *	@since		1.0.0
-        */
         protected static $_instance = null;
-
-        
-        /**
-         * Contains an array of registered script handles
-         *
-         * @var array
-         *
-         *	@since		1.0.0
-        */
         private static $scripts = array();
-        
-        
-        /**
-         * Contains an array of localized script handles
-         *
-         * @var array
-         *
-         *	@since		1.0.0
-        */
         private static $wp_localize_scripts = array();
-        
-        
-        /**
-         * Main SUPER_Media_Cleaner Instance
-         *
-         * Ensures only one instance of SUPER_Media_Cleaner is loaded or can be loaded.
-         *
-         * @static
-         * @see SUPER_Media_Cleaner()
-         * @return SUPER_Media_Cleaner - Main instance
-         *
-         *	@since		1.0.0
-        */
         public static function instance() {
             if(is_null( self::$_instance)){
                 self::$_instance = new self();
             }
             return self::$_instance;
         }
-
-        
-
-        /**
-         * SUPER_Media_Cleaner Constructor.
-         *
-         *  @since      1.0.0
-        */
         public function __construct(){
             $this->includes();
             $this->init_hooks();
             do_action('super_media_cleaner_loaded');
         }
-
-
-        /**
-         * Define constant if not already set
-         *
-         * @param  string $name
-         * @param  string|bool $value
-         *
-         *	@since		1.0.0
-        */
         private function define($name, $value){
             if(!defined($name)){
                 define($name, $value);
             }
         }
-
-        
-        /**
-         * What type of request is this?
-         *
-         * string $type ajax, frontend or admin
-         * @return bool
-         *
-         *	@since		1.0.0
-        */
         private function is_request($type){
             switch ($type){
                 case 'admin' :
@@ -135,85 +54,40 @@ if(!class_exists('SUPER_Media_Cleaner')) :
                     return (!is_admin() || defined('DOING_AJAX')) && ! defined('DOING_CRON');
             }
         }
-
-        
-        /**
-         * Include required core files used in admin and on the frontend.
-         *
-         *  @since      1.0.0
-        */
         public function includes(){
-
             if ( $this->is_request( 'admin' ) ) {
                 include_once( 'includes/class-menu.php' );
                 include_once( 'includes/class-pages.php' );
             }
-
             if ( $this->is_request( 'ajax' ) ) {
                 include_once( 'includes/class-ajax.php' );
             }
-
             if ( $this->is_request( 'frontend' ) ) {
 
             }
-
         }
-
-
-        /**
-         * Hook into actions and filters
-         *
-         *	@since		1.0.0
-        */
         private function init_hooks() {
-            
-            // @since 1.3.0
             register_deactivation_hook( __FILE__, array( $this, 'deactivate' ) );
-            
             if ( $this->is_request( 'frontend' ) ) {
                 
             }
-            
             if ( $this->is_request( 'admin' ) ) {
-                
                 add_action( 'admin_menu', 'SUPER_MC_Menu::register_menu' );
-        
-                // Filters since 1.0.0
                 add_filter( 'admin_enqueue_styles', array( $this, 'enqueue_styles' ) );
                 add_action( 'admin_enqueue_scripts', array( $this, 'enqueue_scripts' ) );
                 
             }
-            
         }
-
-
-        /**  
-         *  Deactivate
-         *
-         *  Upon plugin deactivation delete activation
-         *
-         *  @since      1.3.0
-         */
         public static function deactivate(){
             
         }
-
-
-        /**
-         * Enqueue scripts for each admin page
-         * 
-         * @since       1.0.0
-        */
         public function enqueue_scripts() {
-            
             if ( function_exists( 'get_current_screen' ) ) {
                 $current_screen = get_current_screen();
             }else{
                 $current_screen = new stdClass();
                 $current_screen->id = '';
             }
-
-            // Enqueue Javascripts
             if( $enqueue_scripts = self::get_scripts() ) {
                 foreach( $enqueue_scripts as $handle => $args ) {
                     if ( ( in_array( $current_screen->id, $args['screen'] ) ) || ( $args['screen'][0]=='all' ) ) {
@@ -226,8 +100,6 @@ if(!class_exists('SUPER_Media_Cleaner')) :
                     }
                 }
             }
-            
-            // Enqueue Styles
             if( $enqueue_styles = self::get_styles() ) {
                 foreach( $enqueue_styles as $handle => $args ) {
                     if ( ( in_array( $current_screen->id, $args['screen'] ) ) || ( $args['screen'][0]=='all' ) ) {
@@ -239,25 +111,13 @@ if(!class_exists('SUPER_Media_Cleaner')) :
                     }
                 }
             }
-            
         }
-        
-        
-        /**
-         * Get styles for the backend
-         *
-         * @access private
-         * @return array
-         * [$handle, $src, $deps, $ver, $media]
-         *
-         * @since       1.0.0
-        */
         public static function get_styles() {
             $assets_path = str_replace( array( 'http:', 'https:' ), '', plugin_dir_url( __FILE__ ) ) . 'assets/';
             return array(
                 'super-media-cleaner' => array(
                     'src'     => $assets_path . 'css/media-cleaner.min.css',
-                    'deps'    => array(),
+                    'deps'    => array('jquery'),
                     'version' => self::$version,
                     'media'   => 'all',
                     'screen'  => array(
@@ -289,17 +149,6 @@ if(!class_exists('SUPER_Media_Cleaner')) :
 
             );
         }
-        
-        
-        /**
-         * Get scripts for the backend
-         *
-         * @access private
-         * @return array
-         * [$handle, $src, $deps, $ver, $in_footer]
-         *
-         * @since       1.0.0
-        */
         public static function get_scripts() {
             $assets_path = str_replace( array( 'http:', 'https:' ), '', plugin_dir_url( __FILE__ ) ) . 'assets/';
             return array(
@@ -315,16 +164,6 @@ if(!class_exists('SUPER_Media_Cleaner')) :
                 ),
             );
         }
-        
-        
-        /**
-         * Localize a script once.
-         *
-         * @access private
-         * @param  string $handle
-         *
-         * @since       1.0.0
-        */
         private static function localize_script( $handle ) {
             if ( ! in_array( $handle, self::$wp_localize_scripts ) && wp_script_is( $handle, 'registered' ) && ( $data = self::get_script_data( $handle ) ) ) {
                 $name = str_replace( '-', '_', $handle ) . '_i18n';
@@ -333,29 +172,11 @@ if(!class_exists('SUPER_Media_Cleaner')) :
                 wp_enqueue_script( $handle );
             }        
         }
-        
-        
-        /**
-         * Localize scripts only when enqueued
-         *
-         * @access private
-         * @param  string $handle
-         *
-         * @since       1.0.0
-        */
         public static function localize_printed_scripts() {
             foreach ( self::$scripts as $handle ) {
                 self::localize_script( $handle );
             }
         }
-        
-        
-        /**
-         * Return data for script handles.
-         * @access private
-         * @param  string $handle
-         * @return array|bool
-        */
         private static function get_script_data( $handle ) {
             $scripts = self::get_scripts();
             if( isset( $scripts[$handle]['localize'] ) ) {
@@ -363,10 +184,7 @@ if(!class_exists('SUPER_Media_Cleaner')) :
             }
             return false;
         }
-
-
         public $extensions = array(
-
             // Image file formats by file extension
             'ai' => 'Adobe Illustrator file',
             'bmp' => 'Bitmap image',
@@ -537,20 +355,10 @@ if(!class_exists('SUPER_Media_Cleaner')) :
             'wps' => 'Microsoft Works file',
             'wpd' => 'WordPerfect document'
         );
-
     }
 endif;
 
-
-/**
- * Returns the main instance of SUPER_Media_Cleaner to prevent the need to use globals.
- *
- * @return SUPER_Media_Cleaner
- */
 function SUPER_Media_Cleaner() {
     return SUPER_Media_Cleaner::instance();
 }
-
-
-// Global for backwards compatibility.
 $GLOBALS['SUPER_Media_Cleaner'] = SUPER_Media_Cleaner();

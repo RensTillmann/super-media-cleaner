@@ -15,24 +15,13 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 if( !class_exists( 'SUPER_MC_Ajax' ) ) :
 
-/**
- * SUPER_MC_Ajax Class
- */
 class SUPER_MC_Ajax {
   
-
-    /** 
-     *  Define ajax callback functions
-     *
-     *  @since      1.0.0
-     */
     public static function init() {
-
         $ajax_events = array(
             // Ajax action => nopriv
-            'mc_scan' => false, // @since 1.2.6
+            'scan' => false, // @since 1.2.6
         );
-
         foreach ( $ajax_events as $ajax_event => $nopriv ) {
             add_action( 'wp_ajax_super_' . $ajax_event, array( __CLASS__, $ajax_event ) );
             if ( $nopriv ) {
@@ -40,10 +29,264 @@ class SUPER_MC_Ajax {
             }
         }
     }
+    public static function scan() {
+        $uploadfolder = wp_upload_dir();
+        $dir = $uploadfolder['basedir'];
+        $i = new RecursiveDirectoryIterator($dir);
+        $stats = array(
+            'totalDirectories'=>0,
+            'totalFiles'=>0,
+            'totalBytes'=>0,
+            'files'=>array()
+        );
+        foreach (new RecursiveIteratorIterator($i) as $filename=>$cur) {
+            if(is_dir($filename)) {
+                $stats['totalDirectories']++;
+                continue; // skip dirs
+            }
+            $stats['totalBytes'] += $cur->getSize();
+            $stats['totalFiles']++;
+            $stats['files'][] = $filename;
+        }
+        $stats['totalBytes'] = number_format($totalBytes);
+        echo 'Directories: '.$stats['totalDirectories'].'<br />';
+        echo 'Files: '.$stats['totalFiles'].'<br />';
+        echo 'Size: '.$stats['totalBytes'].' bytes';
+        echo 'Files found:<br />';
+        foreach($files as $k => $v){
+            echo '<i>'.$v.'</i><br />';
+        }
+        exit;
 
+        $uploadfolder = wp_upload_dir();
+        $dir = $uploadfolder['basedir'];
+        $files = scandir($dir);
+        $stats = array(
+            'totalFolders' => count(glob($dir . "/*", GLOB_ONLYDIR)),
+            'totalFiles' => count(array_filter(glob($dir . "/*"), 'is_file')), //count(glob($dir . "/*")), //self::getFileCount($dir),
+            'totalFoldersScanned' => 0,
+            'totalFilesScanned' => 0
+        );
+        var_dump($dir);
+        var_dump($stats);
+        var_dump(self::getFileCount($dir));
+        exit;
+
+
+        $structure = array();
+        $structure[$dir] = array(
+            'folders'=>array(),
+            'files'=>array()
+        );
+        foreach($files as $key => $value){
+            $path = realpath($dir . DIRECTORY_SEPARATOR . $value);
+            if($value==='.' || $value==='..') continue;
+            if(is_dir($path)){
+                $structure[$dir]['folders'][$path] = $value;
+            }else{
+                $structure[$dir]['files'][$path] = $value;
+            }
+        }
+        var_dump($structure);
+        exit;
+
+        $limit = 10; // scan 10 items per request
+        $uploadfolder = wp_upload_dir();
+        $stats = array(
+            'attachments_checked'=>array(), 
+            'folders'=>array(),
+            'log'=>''
+        );
+        $dir = $uploadfolder['basedir'];
+        $GLOBALS['limit'] = (isset($_POST['limit']) ? absint($_POST['limit']) : $limit);
+        $GLOBALS['offset'] = (isset($_POST['offset']) ? absint($_POST['offset']) : 0);
+        $GLOBALS['index'] = (isset($_POST['index']) ? absint($_POST['index']) : 0);
+        $result = self::scan_dir(true, $dir, $stats, $uploadfolder);
+        echo json_encode($result);
+        die();
+
+        /*
+        // Folders and files:
+        echo '<ul>';
+        foreach($result['folders'] as $k => $v){
+            echo '<li>';
+            $basedir = realpath($uploadfolder['basedir']);
+            $folder = str_replace($basedir, '', $k);
+            if($folder===''){
+                $folder = '/';
+            }
+            echo '<strong>'.$folder.'</strong> ('.self::formatSizeUnits($v['size']).')';
+                echo '<br />';
+                foreach($v['files'] as $fk => $f){
+                    echo $f['info']['basename'].' ('.self::formatSizeUnits($f['size']).')<br />';
+                    echo $f['attached_file'].'<br />';
+                    echo 'used by: '.count($f['usedBy']). 'items<br />';
+                    echo 'guid: '.$f['guid']. '<br />';
+                    echo 'attachment_id: '.$f['attachment_id']. '<br />';
+                    var_dump($f['usedBy']);
+                    echo '<br />';
+                    echo '<hr />';
+                }
+            echo '</li>';
+        }
+        echo '</ul>';
+        */
+    }
+    public static function scan_dir($log=true, $baseDir, $stats=array(), $uploadfolder=array() ) {
+        if($log) $stats['log'] .= "scanning directory: ".$baseDir."<br />";
+        // tmp $file = $uploadfolder['basedir']."/super-media-cleaner-log.txt";
+        // tmp $f = fopen($file, "a") or die("Unable to open file!");
+        // tmp $txt = "scanning directory: ".$baseDir."\n";
+        // tmp fwrite($f, $txt);
+        // tmp fclose($f);
+        global $wpdb;
+        if(!isset($stats['folders'][$baseDir])) {
+            $stats['folders'][$baseDir] = array(
+                'size' => 0, 
+                'files' => array()
+            );
+        }
+        if(!isset($stats['folders'][$baseDir]['totalFiles'])){
+            $stats['folders'][$baseDir]['totalFiles'] = self::getFileCount($baseDir);
+        }
+        // List files and directories inside the specified path
+        $files = scandir($baseDir);
+        foreach( $files as $key => $value ) {
+            $path = realpath($baseDir . DIRECTORY_SEPARATOR . $value);
+            if( (is_dir($path)) && ($value!=='.' && $value!=='..') && (!isset($stats['folder'][$path])) ) {
+                $stats['folders'][$path] = array('size'=>0, 'files'=>array());
+            }
+            if($GLOBALS['index']-$GLOBALS['offset'] >= $GLOBALS['limit']){
+                $stats['offset'] = $GLOBALS['index'];
+                return $stats;
+            }
+            $GLOBALS['index']++;
+            if($GLOBALS['index'] <= $GLOBALS['offset']){
+                if(is_dir($path) && ($value==='.' || $value==='..')){
+                    continue;
+                }
+                if(is_dir($path)){
+                    // is directory
+                    $stats = self::scan_dir(false, $path, $stats, $uploadfolder);
+                    continue;
+                }
+            }
+            if(is_dir($path) && ($value==='.' || $value==='..')){
+                continue;
+            }
+            if(is_dir($path)){
+                // is directory
+                $stats = self::scan_dir(true, $path, $stats, $uploadfolder);
+                continue;
+            }else{
+                // is file
+                $fileSize = filesize($path);
+                $info = pathinfo($path);
+                $guid = self::file_url($path);
+                $re = '/-\d+x\d+(?=\.+)/';
+                $regexResult = preg_replace($re, '', $guid, 1);
+                $originGuid = $regexResult;
+                if(isset($stats['attachments_checked'][$originGuid])){
+                    //continue;
+                }else{
+                    $stats['attachments_checked'][$originGuid] = 0;
+                    $attachment_id = 0;
+                    $attachment = $wpdb->get_row($wpdb->prepare("SELECT ID FROM $wpdb->posts WHERE post_type = 'attachment' AND guid = '%s'", $originGuid));
+                    if($attachment) {
+                        $attachment_id = $attachment->ID;
+                        $stats['attachments_checked'][$originGuid] = $attachment_id;
+                    }
+                }
+                $file = array(
+                    'size' => $fileSize,
+                    'path' => $path,
+                    'info' => $info,
+                    'usedBy' => array(),
+                    'attachment_id' => absint($attachment_id),
+                    'guid' => $guid, // e.g: `http://localhost/dev/wp-content/uploads/2022/11/example.jpg`
+                    'attached_file' => str_replace(trailingslashit($uploadfolder['basedir']), '', $path) // e.g: `2022/11/mobile_wallpaper.jpg`
+                );
+                $stats['folders'][$baseDir]['files'][] = self::used($file);
+                // Add filesize to the folder
+                foreach($stats['folders'] as $fk => $fv){
+                    // Check if file belongs to this folder, if so increase folder total size
+                    if(strpos($path, $fk)!==false) {
+                        $stats['folders'][$fk]['size'] = $stats['folders'][$fk]['size'] + $fileSize;
+                    }
+                }
+                if($log) $stats['log'] .= "found file: ".$file['info']['basename']."<br />";
+                continue;
+            }
+        }
+        if($log) $stats['log'] .= "finished scanning: ".$baseDir."<br />";
+        return $stats;
+    }
+    public static function used($file){
+        global $wpdb;
+
+        // Check if image is used
+        $used = false;
+        // SELECT post_status, post_title, post_id, CONCAT(',', CAST(meta_value AS CHAR), ',') AS compareValue 
+        // FROM `wp_postmeta` AS pm
+        // INNER JOIN `wp_posts` AS p ON p.ID = pm.post_id
+        // WHERE post_status IN ('publish') AND (meta_key != '_wp_attached_file' AND (meta_key LIKE '%file%' OR meta_key LIKE '%gallery%' OR meta_key LIKE '%ids%'))
+        // HAVING compareValue LIKE '%,5,%' OR compareValue LIKE '%2022/11/mobile_wallpaper.jpg%'
+        $sql = $wpdb->prepare("
+        SELECT 
+        post_id, 
+        post_type, 
+        post_status, 
+        post_title, 
+        CONCAT(',', CAST(meta_value AS CHAR), ',') AS compareValue 
+        FROM $wpdb->postmeta AS pm INNER JOIN $wpdb->posts AS p ON p.ID = pm.post_id
+        WHERE post_status IN ('publish') 
+        AND (meta_key != '_wp_attached_file' 
+        AND (meta_key LIKE '%s' OR meta_key LIKE '%s' OR meta_key LIKE '%s'))
+        HAVING compareValue LIKE '%s' OR compareValue LIKE '%s'",
+        "%file%", "%gallery%", "%ids%",
+        "%," . $wpdb->esc_like($file["attachment_id"]) . ",%",
+        "%" . $wpdb->esc_like($file["attached_file"]) . "%");
+        $results = $wpdb->get_results($sql);
+        foreach($results as $k => $v){
+            $used = true;
+            if(!isset($file['usedBy'][$v->post_type])){
+                $file['usedBy'][$v->post_type] = array();
+            }
+            $file['usedBy'][$v->post_type][$v->post_id] = array(
+                'post_title' => $v->post_title,
+                'post_status' => $v->post_status
+            );
+        }
+        if($used===true) $file['used'] = true;
+        return $file;
+    }
+    public static function file_url( $file, $uploadfolder=false ) {
+        $file = realpath($file);
+        if(!$uploadfolder) {
+            $uploadfolder = wp_upload_dir();
+        }
+        $basedir = realpath($uploadfolder['basedir']);
+        $url = str_replace($basedir, $uploadfolder['baseurl'], $file);
+        $url = str_replace('\\', '/', $url);
+        return $url;
+    }
+    public static function getFolderCount($path) {
+        $size = 0;
+        $ignore = array('.', '..');
+        $files = scandir($path);
+        foreach($files as $t) {
+            if(in_array($t, $ignore)) continue;
+            if(is_dir($path)){
+                $size += self::getFileCount(rtrim($path, '/') . '/' . $t);
+            } else {
+                $size++;
+            }   
+        }
+        return $size;
+    }
     public static function getFileCount($path) {
         $size = 0;
-        $ignore = array('.','..','cgi-bin','.DS_Store');
+        $ignore = array('.', '..');
         $files = scandir($path);
         foreach($files as $t) {
             if(in_array($t, $ignore)) continue;
@@ -56,21 +299,42 @@ class SUPER_MC_Ajax {
         return $size;
     }
 
-    /*
-    Step 1 - scan / list all directories
-    Step 2 - loop through all the directories one by one, and list all files
-    Step 3 - let user choose file extensions they wish to clean up
-    Step 4 - scan all unchecked files to see if they are used or not
-    Step 5 - remove files to bin
-    Step 6 - recover files if something went wrong
-    */
 
+
+
+
+
+    public static function json_encode_unicode($data) {
+        if (defined('JSON_UNESCAPED_UNICODE')) {
+            return json_encode($data, JSON_UNESCAPED_UNICODE);
+        }
+        return preg_replace_callback('/(?<!\\\\)\\\\u([0-9a-f]{4})/i',
+            function ($m) {
+                $d = pack("H*", $m[1]);
+                $r = mb_convert_encoding($d, "UTF8", "UTF-16BE");
+                return $r!=="?" && $r!=="" ? $r : $m[0];
+            }, json_encode($data)
+        );
+    }
+    //public static function getFileCount($path) {
+    //    $size = 0;
+    //    $ignore = array('.','..','cgi-bin','.DS_Store');
+    //    $files = scandir($path);
+    //    foreach($files as $t) {
+    //        if(in_array($t, $ignore)) continue;
+    //        if (is_dir(rtrim($path, '/') . '/' . $t)) {
+    //            $size += self::getFileCount(rtrim($path, '/') . '/' . $t);
+    //        } else {
+    //            $size++;
+    //        }   
+    //    }
+    //    return $size;
+    //}
     public static function scan_directory( $dir, $structure=array(), $stats=array() ) {
         $delete_transient = false;
         if( ($stats['directories_scanned']==0) && ($stats['files_scanned']==0) ) {
             $delete_transient = true;
         }
-
         $folders_scanned = 0;
         $files_scanned = 0;
         $total_size = 0;
@@ -81,7 +345,6 @@ class SUPER_MC_Ajax {
             if( !is_dir($path) ) {
                 $info = pathinfo($path);
                 $size = filesize($path);
-
                 $known = false;
                 if( array_key_exists( $info['extension'], SUPER_Media_Cleaner()->extensions ) ) {
                     $known = true;
@@ -110,14 +373,12 @@ class SUPER_MC_Ajax {
 
                 // Check if URL was found in post content
 
-
                 // Check if file is attached to a post
-                //self::search_in_attachments();
+                self::search_in_attachments();
 
 
                 /*
                 // Check if file was found in post content
-                
                 Search in post types:
                 - nav_menu_item
                 - attachment
@@ -148,11 +409,9 @@ class SUPER_MC_Ajax {
                 );
                 */
 
-
-
-
+                // @IMPORTANT - Do not use substr() before calling json_encode()
                 $structure['files'][] = array(
-                    'file' => substr($value, 0, 35),
+                    'file' => $value,
                     'found' => $found,
                     'found_in' => $found_in,
                     'post_id' => $post_id,
@@ -180,8 +439,6 @@ class SUPER_MC_Ajax {
                 $folders_scanned++;
             }
         }
-
-        
         $response = array(
             'status' => 'scanning', // analysing, scanning, cleaning
             'type' => 'notice', 
@@ -198,7 +455,6 @@ class SUPER_MC_Ajax {
         return $response;
     }
 
-
     /** 
      *  Return file URL based on file path
      *  e.g htdocs\dev\wp-content\uploads\2018\03\Example-1-100x100.jpg
@@ -206,16 +462,16 @@ class SUPER_MC_Ajax {
      *
      *  @since      1.0.0
     */
-    public static function file_url( $file, $upload_folder=false ) {
-        $file = realpath($file);
-        if(!$upload_folder) {
-            $upload_folder = wp_upload_dir();
-        }
-        $basedir = realpath($upload_folder['basedir']);
-        $url = str_replace($basedir, $upload_folder['baseurl'], $file);
-        $url = str_replace('\\', '/', $url);
-        return $url;
-    }
+    //public static function file_url( $file, $upload_folder=false ) {
+    //    $file = realpath($file);
+    //    if(!$upload_folder) {
+    //        $upload_folder = wp_upload_dir();
+    //    }
+    //    $basedir = realpath($upload_folder['basedir']);
+    //    $url = str_replace($basedir, $upload_folder['baseurl'], $file);
+    //    $url = str_replace('\\', '/', $url);
+    //    return $url;
+    //}
 
 
     /** 
@@ -330,7 +586,7 @@ class SUPER_MC_Ajax {
         $uploads = wp_upload_dir();
         //$guid = 'http://localhost/dev/wp-content/uploads/2018/07/Example-Copy-1.jpg';
         $guid = self::file_url($file);
-        $attachment = $wpdb->get_row("SELECT ID, post_parent FROM $wpdb->posts WHERE post_type = 'attachment' AND guid = '$guid'");
+        $attachment = $wpdb->get_row($wpdb->prepare("SELECT ID, post_parent FROM $wpdb->posts WHERE post_type = 'attachment' AND guid = '%s'", $guid));
         if( $attachment ) {
             $images = self::find_galleries( $delete_transient );
             if( in_array($attachment->ID, $images) ) {
@@ -442,7 +698,6 @@ class SUPER_MC_Ajax {
      *  @since      1.0.0
     */
     public static function mc_scan() {
-        
         $start = $_POST['start'];
         if( $start=='true' ) {
             $upload_folder = wp_upload_dir();
@@ -471,16 +726,13 @@ class SUPER_MC_Ajax {
             }
             $stats = get_transient('super_mc_stats');
         }
-
         //For debugging only!
         error_reporting( 1 );
         @ini_set( 'display_errors', 1 );
-
         if( $stats['status']=='analysing' ) {
             $limit = 50; // Process a total of 10 posts at a time to not stress the database to much
             $query_offset = absint($stats['query_offset']);
             $offset = $limit * $query_offset;
-
             global $wpdb;
             $posts = $wpdb->get_results("
                 SELECT ID, post_content, post_excerpt 
@@ -489,22 +741,19 @@ class SUPER_MC_Ajax {
                 LIMIT $limit 
                 OFFSET $offset"
             );
+            $posts = false;
             if( !$posts ) {
-
                 // Seems we are done here, let's continue and scan directories and files
                 $stats['status'] = 'scanning';
-
             }else{
                 // Get URLs from the posts
                 $all_urls_found = array();
                 foreach( $posts as $k => $v ) {
-
                     // First parse shortcodes
                     $post_content = do_shortcode($v->post_content);
                     $post_content = wp_make_content_images_responsive($v->post_content);
                     //self::return_urls( $post_content );
                     if( !empty($post_content) ) {
-
                         // Get all URLs from the post content
                         // [\w,@?^=%&:\/~+#-]{1,}[.][\w.,@?^=%&:\/~+#-]{2,}
                         $regex = '/[\w,@?^=%&:\/~+#-]{1,}[.][\w.,@?^=%&:\/~+#-]{2,}/';
@@ -520,39 +769,25 @@ class SUPER_MC_Ajax {
                                 }
                             }
                         }
-                       
                     }
                 }
-
                 // Update stats to display how many URLs we have found so far
-                $stats['urls_found'] = count($all_urls_found);
-                $stats['log'] = 'Analysing posts, found a total of ' . count($all_urls_found) . ' possible media URL\'s';
-
-                    /*
-                    // Of course we also need to scan the database for URLs
-
-                    // And of course we also need to scan widgets including the function do_shortcode() and wp_make_content_images_responsive() for the Text Widget which can contain HTML
-                    */
-
-
+                $stats['urls_found'] = $stats['urls_found']+count($all_urls_found);
+                $stats['log'] = 'Analysing posts, found a total of ' . $stats['urls_found'] . ' media URL\'s';
                 // Save all URLs for later use when scanning
-                set_transient( 'super_mc_urls_found', $all_urls_found, 60 * 60 * 2 );
-
+                //set_transient( 'super_mc_urls_found', $all_urls_found, 60 * 60 * 2 );
                 // Increase offset by 1
                 $stats['query_offset'] = $query_offset + 1;
             }
-
             set_transient( 'super_mc_stats', $stats, 60 * 60 * 2 );
-
             // Return stats to callback and continue the loop
-            echo json_encode($stats);
-
+            $json = json_encode($stats);
+            echo $json;
         }else{
-
             // We are all set it seems, so let's scan files
             $result = self::scan_directory($dir, array(), $stats);
-            echo json_encode($result);
-
+            $json = json_encode($result);
+            echo $json;
         }
         //sleep(1);
         die();

@@ -32,7 +32,7 @@ class SUPER_MC_Menu {
             'Super Media Cleaner',
             'manage_options',
             'super_media_cleaner_scan',
-            'SUPER_MC_Pages::scan'
+            'SUPER_MC_Pages::scan_page'
         );
     }
 }
